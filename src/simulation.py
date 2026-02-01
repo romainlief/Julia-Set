@@ -7,6 +7,12 @@ from const import (
     IM_MAX,
     C_RE,
     C_IM,
+    C_RE_MIN,
+    C_RE_MAX,
+    C_IM_MIN,
+    C_IM_MAX,
+    POSIx1,
+    POSIy1,
 )
 
 from Julia import JuliaSet
@@ -26,7 +32,7 @@ class Simulation:
         im_min=IM_MIN,
         im_max=IM_MAX,
     ) -> None:
-        self.max_iter = 200
+        self.max_iter = 20
         self.c = complex(C_RE, C_IM)
         self.julia_function = JuliaSet(self.max_iter, self.c)
         self.grid = ComplexGrid(width, height, re_min, re_max, im_min, im_max)
@@ -101,7 +107,78 @@ class Simulation:
         btn_reset = widgets.Button(ax_btn_reset, "Reset View")
         btn_reset.on_clicked(lambda event: self.reset_viewport())
 
+        ax_btn_island = plt.axes([0.85, 0.45, 0.1, 0.05])  # type: ignore
+        btn_island = widgets.Button(ax=ax_btn_island, label="First view")
+        btn_island.on_clicked(lambda event: self.move_to_a_viewport(POSIx1, POSIy1))
+
+        # Sliders pour Re(c) et Im(c) avec mise à jour temps réel
+        ax_slider_re = plt.axes([0.75, 0.40, 0.18, 0.03])  # type: ignore
+        ax_slider_im = plt.axes([0.75, 0.35, 0.18, 0.03])  # type: ignore
+        self.slider_re = widgets.Slider(
+            ax_slider_re, "Re(c)", valmin=C_RE_MIN, valmax=C_RE_MAX, valinit=self.c.real
+        )
+        self.slider_im = widgets.Slider(
+            ax_slider_im, "Im(c)", valmin=C_IM_MIN, valmax=C_IM_MAX, valinit=self.c.imag
+        )
+
+        # Affichage du paramètre c en haut à gauche
+        self.c_text = ax.text(
+            0.02,
+            0.98,
+            self._format_c(),
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            color="white",
+            fontsize=10,
+            bbox=dict(facecolor="black", alpha=0.4, edgecolor="none", pad=3),
+        )
+
+        def on_c_change(_val):
+            # Mettre à jour c depuis les sliders et recalculer
+            self.c = complex(self.slider_re.val, self.slider_im.val)
+            self.julia_function.c = self.c
+            # Mettre à jour l'affichage texte
+            self.c_text.set_text(self._format_c())
+            self.re_compute()
+
+        self.slider_re.on_changed(on_c_change)
+        self.slider_im.on_changed(on_c_change)
+
+        # Contrôle souris: déplacer c selon la position du pointeur dans l'axe
+        # (mise à jour légère avec throttling pour éviter recalculs excessifs)
+        self._last_mouse_update = 0.0
+        self._mouse_update_interval = 0.05  # secondes
+
+        def on_mouse_move(event):
+            # Ignorer si hors des axes d'image ou si pas de coordonnées valides
+            if event.inaxes != self.ax or event.xdata is None or event.ydata is None:
+                return
+            # Throttle: limiter la fréquence de mise à jour
+            import time
+
+            now = time.time()
+            if now - self._last_mouse_update < self._mouse_update_interval:
+                return
+            self._last_mouse_update = now
+
+            # Mapper la position du pointeur au paramètre c
+            new_re = float(event.xdata)
+            new_im = float(event.ydata)
+            # Clamp dans les bornes des sliders pour rester cohérent
+            new_re = min(max(new_re, C_RE_MIN), C_RE_MAX)
+            new_im = min(max(new_im, C_IM_MIN), C_IM_MAX)
+            # Mettre à jour sliders -> déclenche on_c_change (recompute + texte)
+            self.slider_re.set_val(new_re)
+            self.slider_im.set_val(new_im)
+
+        # Connecter l'événement de déplacement de la souris
+        self.fig.canvas.mpl_connect("motion_notify_event", on_mouse_move)
+
         plt.show()
+
+    def _format_c(self):
+        return f"c = {self.c.real:.5f} + {self.c.imag:.5f}i"
 
     def move_viewport(self, delta_re, delta_im):
         re_width = self.grid.re_max - self.grid.re_min
@@ -189,7 +266,7 @@ class Simulation:
                 self.grid.im_max,
             )
         )
-        # self.print_viewport()
+        self.print_viewport()
 
     def _viewport_key(self):
         # Quantification pour éviter les clés flottantes quasi-identiques
