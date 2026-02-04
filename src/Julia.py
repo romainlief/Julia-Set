@@ -8,11 +8,28 @@ class JuliaSet:
 
     def escape_times(self, grid):
         z = grid.copy()
-        M = np.zeros(grid.shape, dtype=np.int32)
+        # Choisir le plus petit dtype entier non signé suffisant pour max_iter
+        if self.max_iter <= 255:
+            int_dtype = np.uint8
+        elif self.max_iter <= 65535:
+            int_dtype = np.uint16
+        else:
+            int_dtype = np.uint32
+        M = np.zeros(grid.shape, dtype=int_dtype)
+
+        alive = np.ones(grid.shape, dtype=bool)
+        radius2 = 4.0
 
         for _ in range(self.max_iter):
-            alive = np.abs(z) <= 2.0
-            M[alive] += 1
-            z[alive] = z[alive] * z[alive] + self.c
+            # Mettre à jour le masque des points encore "vivants" sans calculer de racine
+            still_alive = (z.real * z.real + z.imag * z.imag) <= radius2
+            alive &= still_alive
+
+            if not alive.any():
+                break
+
+            np.add(M, 1, out=M, where=alive)
+            np.multiply(z, z, out=z, where=alive)
+            np.add(z, self.c, out=z, where=alive)
 
         return M

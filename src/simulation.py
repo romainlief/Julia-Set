@@ -32,7 +32,7 @@ class Simulation:
         im_min=IM_MIN,
         im_max=IM_MAX,
     ) -> None:
-        self.max_iter = 20
+        self.max_iter = 50
         self.c = complex(C_RE, C_IM)
         self.julia_function = JuliaSet(self.max_iter, self.c)
         self.grid = ComplexGrid(width, height, re_min, re_max, im_min, im_max)
@@ -266,7 +266,7 @@ class Simulation:
                 self.grid.im_max,
             )
         )
-        self.print_viewport()
+        #self.print_viewport()
 
     def _viewport_key(self):
         # Quantification pour éviter les clés flottantes quasi-identiques
