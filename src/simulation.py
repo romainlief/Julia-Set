@@ -42,6 +42,15 @@ class Simulation:
         self._render_cache = {}
         self._cache_order = []
         self._cache_max = 100
+        # Quantification pour la programmation dynamique (éviter recomputations inutiles)
+        # Quantification de c (Re, Im)
+        self.c_quant = 1e-3
+        # Quantification du viewport: 1 pixel (modifiable)
+        self.viewport_quant_pixels = 1.0
+        # Dernière valeur quantifiée de c pour coalescer les mouvements souris
+        self._last_quantized_c = None
+        # Positions (c quantifiés) déjà visitées
+        self._visited_c = set()
 
     def run(self):
         grid = self.grid.grid()
@@ -168,9 +177,19 @@ class Simulation:
             # Clamp dans les bornes des sliders pour rester cohérent
             new_re = min(max(new_re, C_RE_MIN), C_RE_MAX)
             new_im = min(max(new_im, C_IM_MIN), C_IM_MAX)
+            # Quantifier pour améliorer le taux de hit du cache
+            qre = round(new_re / self.c_quant) * self.c_quant
+            qim = round(new_im / self.c_quant) * self.c_quant
+            quant_c = (qre, qim)
+            # Si la valeur quantifiée n'a pas changé, ne rien faire
+            if self._last_quantized_c == quant_c:
+                return
+            self._last_quantized_c = quant_c
+            # Mémoriser la position visitée
+            self._visited_c.add(quant_c)
             # Mettre à jour sliders -> déclenche on_c_change (recompute + texte)
-            self.slider_re.set_val(new_re)
-            self.slider_im.set_val(new_im)
+            self.slider_re.set_val(qre)
+            self.slider_im.set_val(qim)
 
         # Connecter l'événement de déplacement de la souris
         self.fig.canvas.mpl_connect("motion_notify_event", on_mouse_move)
@@ -269,18 +288,31 @@ class Simulation:
         #self.print_viewport()
 
     def _viewport_key(self):
-        # Quantification pour éviter les clés flottantes quasi-identiques
-        q = 1e-12
+        # Quantifier le viewport au pas de pixel pour stabiliser les clés
+        re_range = self.grid.re_max - self.grid.re_min
+        im_range = self.grid.im_max - self.grid.im_min
+        # Pas en unités complexes correspondant à N pixels
+        q_re = (re_range / self.grid.width) * self.viewport_quant_pixels
+        q_im = (im_range / self.grid.height) * self.viewport_quant_pixels
+        re_min_q = round(self.grid.re_min / q_re) * q_re if q_re > 0 else self.grid.re_min
+        re_max_q = round(self.grid.re_max / q_re) * q_re if q_re > 0 else self.grid.re_max
+        im_min_q = round(self.grid.im_min / q_im) * q_im if q_im > 0 else self.grid.im_min
+        im_max_q = round(self.grid.im_max / q_im) * q_im if q_im > 0 else self.grid.im_max
+
+        # Quantifier c pour maximiser le hit rate lors des mouvements souris
+        c_re_q = round(self.c.real / self.c_quant) * self.c_quant
+        c_im_q = round(self.c.imag / self.c_quant) * self.c_quant
+
         return (
-            round(self.grid.re_min / q) * q,
-            round(self.grid.re_max / q) * q,
-            round(self.grid.im_min / q) * q,
-            round(self.grid.im_max / q) * q,
+            re_min_q,
+            re_max_q,
+            im_min_q,
+            im_max_q,
             self.grid.width,
             self.grid.height,
             self.julia_function.max_iter,
-            float(self.c.real),
-            float(self.c.imag),
+            c_re_q,
+            c_im_q,
         )
 
     def _put_cache(self, key, value):
